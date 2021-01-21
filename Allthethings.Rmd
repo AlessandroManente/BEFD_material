@@ -1,0 +1,1560 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+# CASE STUDY LAB 1
+
+```{r}
+#Set of datasets from "Forecasting: Principles and Practice" book 
+library(fpp2)
+library(forecast)
+library(lmtest)
+```
+
+## LINEAR REGRESSION with trend and seasonality
+
+### Data on Australian beer production
+
+First data exploration:
+
+```{r}
+beer<- ausbeer
+plot(beer)
+Acf(beer)
+Pacf(beer)
+```
+
+Very strong seasonal component and trend (NON-LINEAR). Many lags appear significant, we can see a trend and a seasonality (the lags multiple of 4 are more significant)
+While the ACF takes into account the correlations between observations that are distant of a particular lag like, for example, the lag 4 autocorrelation is talking about the correlation between two observation that are distant 4 lags and this kind of autocorrelation takes into account also the other autocorrelation that are inside: for example autocorrelation at lag 4 takes into account also the correlation at lag 3,2 and 1, the PARTIAL autocorrelation just takes into account the pure correlation between two observation that are distant a particular lag, for example, the autocorrelation at lag 4 just takes into account the correlation between two observation that are distant 4 lags without taking into account the other correlations that are inside like 3 and 2 legs.
+In our PACF we can see that the lag 4 is very significant, so it confirms the seasonality
+
+Take a portion of data and fit a linear model (to simplify the problem)
+
+```{r}
+beer1<- window(ausbeer, start=1992, end=2006 -.1)
+plot(beer1)
+```
+
+We see a strong seasonality but the NON-linear trend is removed, now we have a LINEAR trend
+
+```{r}
+#A first linear model
+m1<- tslm(beer1~ trend + season)
+#We can see a slightly negative trend
+summary(m1)
+fit<- fitted(m1)
+plot(beer1)
+lines(fitted(m1), col=2)
+```
+
+```{r}
+#Forecasting
+fore <- forecast(m1)
+plot(fore)
+```
+
+```{r}
+#Analysis of residuals
+res<- residuals(m1)
+plot(res)
+Acf(res)
+```
+
+Residuals show a particular pattern (no white noise), a seasonal behavior. Althoug this last fact, we can accept our model (see m1 plot) because it capture very well the beahvior of our t.s.. We have an up and down behavior for every single residual.
+We can see a good global behavior, except for the first lag that has a NEGATIVE autocorr. This last aspect confirm the fact that if we have a first res. that is positive, the next one is negative. This is peculiar of a ZIG-ZAG behavior.
+
+To see the significance respect the prensence of autocorrelations we have the Durbin-Watson test. It detects the presence of autocorrelation in residuals of a regression model. If its value is significant we can say that the residuals are correlated each other (in a positive way if the value is between 0-2, in a negative between 2-4), otherwise they are not correlated (NB: it doesn't say which residuals are correlated, it says only a general presence of relationship). This test takes values between 0 (positivi autoc.) and 4 (negative autoc.), with a central value in 2 (that indicates the absence of any autocorrelations).
+
+```{r}
+dw<- dwtest(m1, alt="two.sided")
+dw
+```
+
+## Exercise 1: how could we model the entire series? (To update!!! See lecture or correctiong of prof)
+
+```{r}
+#Data overview
+tsdisplay(beer)
+```
+
+```{r}
+#Linear model
+m.beer<- tslm(beer~ trend + season)
+summary(m.beer)
+#Fitting
+fit.l<- fitted(m.beer)
+plot(beer)
+lines(fit.l, col=2)
+#Analysis of residuals
+res.l<- residuals(m.beer)
+tsdisplay(res.l)
+```
+
+The model is too simple, it doesn't capture many informations. We can try with a polynomial regression: the data have a curved trend
+
+```{r}
+#Linear model (polynomial version) + ARIMA on residuals
+m.beer.pol<- tslm(beer~ poly(trend, 2, raw=TRUE) + season)
+summary(m.beer.pol)
+#Fitting
+fit.l2<- fitted(m.beer.pol)
+plot(beer)
+lines(fit.l2, col=2)
+#Analysis of residuals
+res.l2<- residuals(m.beer.pol)
+tsdisplay(res.l2)
+#ARIMA on residuals
+arimaResiduals <- auto.arima(res.l2)
+summary(arimaResiduals)
+#Fitting on residuals and plot comparison
+fit.ar <- fitted(arimaResiduals)
+plot(fit.ar, lty=1)
+lines(res.l2, lty=1,col=2)
+legend(1990,63,legend= c("arima forecast", "observed t.s."), col=c(1,2), lty=2)
+#Combination of tslm and ARIMA
+fittbeer <- fit.l2 + fit.ar
+plot(beer, type='l', main = "Beer")
+lines(fittbeer, col=2)
+lines(fit.l2,col=3)
+legend(1995,335,legend= c("observed","Lin+ARIMA","Lin"), col=c(1,2,3), lty=1)
+#New residuals
+new.res<-fittbeer-beer
+tsdisplay(new.res)
+```
+
+The model fits better than the previous and the residuals seem ok
+
+```{r}
+#ARIMA model (paramters of the best model evaluated using AIC)
+arima.beer <- Arima(beer, order = c(2,1,1), seasonal = list(order=c(2,1,2), period=4))
+arima.beer
+#Fitting
+plot(fitted(arima.beer))
+lines(beer, col=2)
+#Analysis of residuals
+res.arima<- residuals(arima.beer)
+tsdisplay(res.arima)
+#This model has a good fit and the residuals are ok, but it has a complex structure and the parameter are difficult to interpret. But we choose this last model to make some forecasts.
+
+#Forecasts
+forcast.arima <- forecast(arima.beer)
+plot(forcast.arima)
+```
+
+## ARIMA models (part I)
+
+Data on quarterly percentage change in US consumption, income, production, savings, unemployment
+
+```{r}
+#All the data
+uschange
+str(uschange)
+plot(uschange)
+#Unique visualization of the series, to find possible relations
+autoplot(uschange)
+```
+
+### Exercise 2: try to study the beahvior of these series together
+
+#Using a multiple rgression model, for example studying the consumption against the other variables in this way we can see if there are significant relations between these variables. molde<-tslm( uschange[,1]~ uschange[,2] +  uschange[,3] +  uschange[,4] +  uschange[,5])
+We will consider only the series of consumption.
+
+```{r}
+#Data exploration
+cons<- uschange[,1]
+plot(cons)
+Acf(cons)
+Pacf(cons)
+```
+
+We apparently not dealing with a strong trend, this is due to the fact that by constraction this series can't have a strong trend (this dataset is related to the percentage change in these variables). We are not sure of if there is a seasonality pattern. This indicate that there is NOT a seasonal behavior (even if we have quarterly data). Same result of ACF, only the first lags are significant.
+
+General indication: 
+if the ACF is exponentially decaying and there is a significant spike at lag p (LAST lag and nothing else after) in PACF, it may be an ARMA(p,d,0).
+If the PACF is exponentially decaying and there is a significant spike at lag p in ACF, it may be an ARMA(0,d,q). In our case is difficult to see a clear situation between the previous general ones. We have to apply a trial and error approach based on the previous general rules. In our case it seems similar to the second situation: PACF has an exp. decaying and a spike in lag 3 in ACF (after we have any spikes). d=0 beacuse we have a stationary t.s..
+
+```{r}
+arima1<- Arima(cons, order=c(0,0,3))
+fitted(arima1)
+
+#Plot. It doesn't fit in a good way: it doens't capture the strong pos. and neg. spikes
+plot(cons)
+lines(fitted(arima1), col=2)
+```
+
+Residuals (we try in any case to calculate the residuals plots, althoug we have seen that the fitted values of the model are't good). In a common case (see the guide), after the fitting (and the comparison with other model with AIC) we see directly the residual plot to see the presence of white noise. In this case we see the fitted values instead residuals.
+In ACF and PACF we have a not so easily understandable significant lag in position 22. The rest is globally acceptable
+
+```{r}
+resid1<- residuals(arima1)
+tsdisplay(resid1)
+```
+
+```{r}
+#Forecasting (altough is not a good model)
+for1<- forecast(arima1)
+#In any case an ARIMA model performs, in terms of forecasting, a constant behavior. This is a common
+#problematic feature of ARIMA models: if we don't have a seasonality, the forecasting has a constant
+#behavior (ARIMAs are good describers of t.s., but bad forecaster)
+plot(for1)
+```
+
+## ARIMA models (part II) (Not treated during class The sequent argument is ARMAX)
+
+Data on retail trade index in Euro area (1996-2011)
+
+```{r}
+plot(euretail, ylab="retail index",xlab="year")
+tsdisplay(euretail)
+#Differencing
+diff1<- diff(euretail)
+tsdisplay(diff1)
+```
+
+Now we will procede with a stepwise approach that modifies the parameters one at time
+
+```{r}
+#We fit the first Arima model 
+a1<- Arima(euretail, order=c(0,1,1), seasonal=c(0,0,1))
+fit1<- fitted(a1)
+
+plot(euretail)
+lines(fit1, col=2)
+
+f1<- forecast(a1)
+plot(f1)
+
+r1<- residuals(a1)
+tsdisplay(r1) 
+
+#Second Arima model
+a2<- Arima(euretail, order=c(0,1,1), seasonal=c(0,0,2))
+fit2<- fitted(a2)
+
+plot(euretail)
+lines(fit2, col=2)
+
+f2<- forecast(a2)
+plot(f2)
+
+r2<- residuals(a2)
+tsdisplay(r2) 
+
+#Third Arima model
+a3<- Arima(euretail, order=c(0,1,1), seasonal=c(0,1,1))
+fit3<- fitted(a3)
+
+plot(euretail)
+lines(fit3, col=2)
+
+f3<- forecast(a3)
+plot(f3)
+
+r3<- residuals(a3)
+tsdisplay(r3) 
+
+#Fourth Arima model 
+a4<- Arima(euretail, order=c(0,1,2), seasonal=c(0,1,1))
+fit4<- fitted(a4)
+
+plot(euretail)
+lines(fit4, col=2)
+
+f4<- forecast(a4)
+plot(f3)
+
+r4<- residuals(a4)
+tsdisplay(r4) 
+
+#Fifth Arima model (auto.arima)
+auto.a<- auto.arima(euretail)
+auto.a
+fit5<- fitted(auto.a)
+
+plot(euretail)
+lines(fit5, col=2)
+
+f5<- forecast(auto.a)
+plot(f5)
+
+r5<- residuals(auto.a)
+tsdisplay(r5)
+```
+
+### drug sales in Australia (July 1991- June 2008)
+
+```{r}
+#Explore and transform the data
+tsdisplay(h02)
+#Perform log transformation to stabilize variance
+lh02<- log(h02)
+tsdisplay(lh02)
+str(lh02)
+```
+
+```{r}
+#Use of function window() to create training and test set, and also to create a portion of dataset
+lh.train<- window(lh02, end=2005)
+aa<- auto.arima(lh.train)
+summary(aa)
+#To see only the AIC we can use: AIC(aa)
+
+#Fitting
+fit<- fitted(aa)
+fit
+lh.test<- window(lh02, start=2005)
+lh.test
+
+#Accuracy measures in test set (?)
+accuracy(fit, lh.test)
+#ME=mean(lh.test-fit)
+#RMSE=sqrt(mean((lh.test-fit)**2))
+#MAE=mean(abs(lh.test-fit))
+```
+
+## ARMAX model (From here, was treated in class)
+
+### Data on US personal consumption and income
+
+In ARMAX model (ARIMA+regression model) we want to extend the ARIMA by combining regression model and ARIMA model to obtain regression with ARIMA errors. In short, we add to the ARIMA some variables useful to understand better the behavior of our series. "X" stands for regression t.s.. We have to imagine a regression model with a focus on the errors using ARIMA: y = x + e  (y = regression part + ARIMA part)
+
+```{r}
+uschange
+autoplot(uschange)
+
+#Is the consumptio related to income? We expect a relation.
+#Plots
+par(mfrow=c(2,1))
+#Consumption
+plot(uschange[,1])
+#Income
+plot(uschange[,2])
+par(mfrow=c(1,1))
+#More info on consumption variable
+tsdisplay(uschange[,1])
+```
+
+```{r}
+uschange
+autoplot(uschange)
+
+#Is the consumptio related to income? We expect a relation.
+#Plots
+par(mfrow=c(2,1))
+#Consumption
+plot(uschange[,1])
+#Income
+plot(uschange[,2])
+par(mfrow=c(1,1))
+#More info on consumption variable
+tsdisplay(uschange[,1])
+```
+
+First ARMAX model
+"xreg" selects the regression terms (variables) 
+
+```{r}
+armax1<- Arima(uschange[,1], xreg=uschange[,2], order=c(1,0,1))
+armax1
+res1<- residuals(armax1)
+#The residuals appear good but...
+plot(res1)
+Acf(res1)
+fitted(armax1)
+plot(uschange[,1])
+lines(fitted(armax1), col=2)
+```
+
+The regression term appears significant (0.1825/0.0456 > 2) so it is useful to understand the behavior of our series. The choice of an ARIMA(1,0,1) derives from the fact that we have any trend (we have percentage change), instead the choice p=1 and q=1 are a careful way to find a possible structure for an ARIMA model (for a better selection see the guide)
+We see the fitted values (...the model doesn't capture in a good way the global behavior)
+
+Second ARMAX model
+
+```{r}
+armax2<- Arima(uschange[,1], xreg=uschange[,2], order=c(1,0,2))
+armax2
+res2<- residuals(armax2)
+#The first model is better
+Acf(res)
+fitted(armax2)
+plot(uschange[,1])
+lines(fitted(armax2), col=2)
+```
+
+The model doesn't capture in a good way the global behavior also in this case (but is better than the previous one)
+
+To select the model, considering the fact that are very similar (the first has better residuals behavior, the second fits better) we use AIC
+
+```{r}
+AIC(arima1)
+AIC(armax2)
+```
+
+We prefer the second model.
+
+Procedure also available with auto.arima
+
+```{r}
+auto.arima<- auto.arima(uschange[,1], xreg=uschange[,2])
+```
+
+### Quarterly international arrivals (in thousands) to Australia from Japan, New Zealand, UK and the US. 1981Q1 - 2012Q3
+
+```{r}
+autoplot(arrivals)
+autoplot(arrivals[,c(1,2)])
+```
+
+All the variables have seasonality and different trends. Japan has a strongly NON-linear behavior, instead for New Zeland is LINEAR. 
+We focus on Japan and New Zeland because they star in the same way but then from 2001 they have opposite trends. We can hypothesize a competetive behavior for the two countries
+
+```{r}
+#Variables definition
+Japan<- arrivals[,1]
+NZ<- arrivals[,2]
+UK<- arrivals[,3]
+US<- arrivals[,4]
+```
+
+We try with a simple arima model (not reasonable forecast). We prefer a linear model in this case. The dependent variable is NZ and regression variable is Japan.
+
+```{r}
+auto.arima<- auto.arima(NZ, xreg=Japan) 
+auto.arima
+```
+
+We try with a regression model with trend, season and external variable 'Japan'
+
+```{r}
+mod<- tslm(NZ~ trend+season+Japan) 
+#The significance and the negative sign confirms the presence of a competitive behavior
+summary(mod)
+fitted(mod)
+plot(NZ)
+lines(fitted(mod), col=2)
+#With an "armonic" behavior of residuals we can say that we may be in presence of potive 
+#autocorrelation in residuals
+plot(residuals(mod))
+```
+
+```{r}
+#Analysis of residuals: are there autocorrelation? 
+dw<- dwtest(mod, alt="two.sided")
+#This result confirm that we re dealing with autocorrelation in residuals (the autoc. is not 0)
+dw
+#We see that there is something that remains unexplained in our data. We don't capture all the
+#informations in our data
+tsdisplay(residuals(mod))
+
+#Fit an arima model to residuals
+aar<- auto.arima(residuals(mod))
+#It is a quite complex model (many parameters)
+aar
+fitted(aar)
+```
+
+Complete the analysis by summing predictions made with linear model and ARIMA on residuals. Combination of models seen also in Lab 1
+
+```{r}
+plot(NZ)
+lines(fitted(mod)+fitted(aar), col=3)
+```
+
+
+Another way of performing the same linear regression tt: time for modelling the trend
+
+```{r}
+tt<- (1:length(NZ))
+#seas factorizes the observations
+#1:3: adds the last 3 observations (without this, "rep" deletes them)
+seas <- factor(c(rep(1:4,length(NZ)/4),1:3)) 
+#All the parameter are linear
+mod2 <- lm(NZ~ tt+seas+Japan)
+#We have the same results of mod (with tslm function)
+summary(mod2)
+AIC(mod2)
+AIC(mod)
+```
+
+## GAM model
+
+Are the paramenters all linear? To see if tt and Japan has a NON-linear role we use GAM. s() stands for smoothing spline. Values for df should be greater than 1, with df=1 implying a linear fit. In our model we say that the df could be 2,3 or 4 (increasingly linear structure). More high is the df more jumpier is the function.
+
+```{r}
+library(gam)
+g1 <- gam(NZ~s(tt)+seas+s(Japan),arg=c("df=2","df=3","df=4"))
+summary(g1)
+```
+
+We have two ANOVA: for parametric and NON-paramtric effects. For seas we don't have a non-par. part because we don't model it with splines (it is pointless molling the seasonality with smoothing splines because is a factorial variable).
+
+```{r}
+#Time and Japan have a nonlinear effect
+par(mfrow=c(2,2))
+#These plots confirm the fact that tt and Japan have a non-linear relation with NZ
+plot(g1, se=T)
+#GAM is the best model
+AIC(mod2)
+AIC(g1)
+```
+
+```{r}
+#Try another option with loess (lo)
+g2<- gam(NZ~lo(tt)+seas+lo(Japan))
+summary(g2)
+par(mfrow=c(2,2))
+plot(g2, se=T)
+#It's better then mod2 but worse then g1
+AIC(g2)
+```
+
+```{r}
+#Perform an analysis of residuals
+tsdisplay(residuals(g1))
+aar1<- auto.arima(residuals(g1))
+plot(as.numeric(NZ), type="l")
+#Combination of g1 on data and Arima on residuals
+lines(fitted(aar1)+ fitted(g1), col=4)
+```
+
+We don't make any forecast because it is available only if we have future values of 'Japan', general problem of this approach. A possible solution is model the t.s. of Japan (for example with a BASS model) and make some forecasts and use them to make forecast on NZ with our initial model. We can use a BASS model beacuse the data are turistic destinations, so they are a product and follow a cycle product pattern
+
+### Exercise 6: model Japan variable with BASS model and use its forecasts to make predictions with our initial model
+
+### Google stock price: Daily closing stock prices of Google Inc
+
+```{r}
+autoplot(goog)
+```
+
+
+
+
+# CASE STUDY LAB 2
+
+```{r}
+#Dataset and preliminary analysis
+dati <- read.csv("movies.csv", stringsAsFactors=TRUE)
+str(dati)
+#Srase columns of indicator variables (useless)
+dati<-dati[,-c(1,2)]
+```
+
+```{r}
+#Transform variable release_date in format "data"
+dati$release_date <- as.Date(dati$release_date, "%d/%m/%Y")
+str(dati)
+```
+
+```{r}
+# Response variable: vote_average
+summary(dati$vote_average)
+boxplot(dati$vote_average, col="orange", ylim=c(0,10), main="Movies", ylab="Rating")
+hist(dati$vote_average, col="orange", main="Movies", xlab="Rating")
+```
+
+```{r}
+#Explanatory variables
+summary(dati)
+#We consider the plots of a subset of variables
+summary(dati[,c(1,2,5,6)])
+par(mfrow=c(2,2))
+#We can see a right skewed behavior for three of them, so we need a log transformation
+for(i in c(1,2,5,6)){
+  hist(dati[,i], col="grey", main=paste(colnames(dati)[i]), xlab="")
+}
+```
+
+```{r}
+#Transform quantitative variables in log scale
+dati$budget <- log(dati$budget)
+dati$popularity <- log(dati$popularity)
+dati$revenue <- log(dati$revenue)
+summary(dati[,c(1,2,5,6)])
+for(i in c(1,2,5,6)){
+  hist(dati[,i], col="grey", main=paste(colnames(dati)[i]), xlab="")
+}
+par(mfrow=c(1,1))
+```
+
+```{r}
+#Transform release_date in numeric (to use gbm)
+dati$release_date<-as.numeric(dati$release_date)
+summary(dati$release_date)
+```
+
+```{r}
+#Set train (70%) and test (30%)
+set.seed(1)
+train = sample (1:nrow(dati), 0.7*nrow(dati))
+dati.train=dati[train ,]
+dati.test=dati[-train ,]
+```
+
+```{r}
+#Make some variables factors
+dati.train[,c(3,7, 10:24)]= lapply(dati.train[,c(3,7, 10:24)],factor)
+dati.test[,c(3,7, 10:24)]= lapply(dati.test[,c(3,7, 10:24)],factor)
+str(dati.train)
+```
+
+## LINEAR MODEL
+
+```{r}
+#We exclude the "class version" of our response variable
+m1 <- lm(vote_average~.-vote_classes, data=dati.train)
+summary(m1)
+```
+
+Model selection with stepwise regression (the best one has the minimum AIC value. We can have also non-significant variables)
+
+```{r}
+m2 <- step(m1, direction="both")
+summary(m2)
+par(mfrow=c(2,2))
+plot(m2)
+par(mfrow=c(1,1))
+```
+
+Considerations: "budget" has a negative role respect our response, we have to consider that the votes are given by commitees and not normal people, so they could consider in a positive way films with a low budget that in most cases are independent film. Another consideration is that "revenue" a strong positive one
+
+```{r}
+#Prediction
+p.lm <- predict(m2, newdata=dati.test)
+#This is the deviance of our selected model. This value can be compared with the deviance of other
+#model (see later GAM model)
+dev.lm <- sum((p.lm-dati.test$vote_average)^2)
+dev.lm
+AIC(m2)
+```
+
+## GAM
+
+GAM with splines. Considering that we want use some variables with smoothing splines, and this is a problem with factorial variables, we create a formula to recognize variables that allow the use of splines and variables that don't allow it. We will use splines on all the var. that allow it (only numericals, not factors)
+
+```{r}
+library(gam)
+fg1 <- as.formula(paste(paste("dati.train[,8] ~s(", paste(names(dati.train[c(1,2,4,5,6)]),collapse=") + s("),")"), paste(names(dati.train)[c(3,7, 10:25)], collapse="+ "), sep=" + "))
+fg1
+#Here we don't specify any df, it uses the default value 4: for each var.with smoothing 1 for 
+#the par. part and 3 for the non-par. part (see summary)
+g1<-gam(fg1,data=dati.train)
+summary(g1)
+plot(g1, se=T, ask=F)
+```
+
+To perform a stepwise model selection with GAM, we have to start with a linear model (df=1). This below is a linear model (no splines, no loess and so on)
+
+```{r}
+g2 <- gam(vote_average~.-vote_classes, data=dati.train)
+#We have only the parametric part
+summary(g2)
+#Show the linear effects (in fact we have only straight lines)
+plot(g2, se=T, ask=F) 
+```
+
+Perform stepwise selection using "gam.scope". We specify our data, the position of our response var. and the df that we want evaluate, the function scope() looks for the best variables considering non-linearity with 2,3 and 4 df in this case.
+Values for df should be greater than 1, with df=1 implying a linear fit
+The selected model is choose considering AIC. An other important point is that this function assigns the best number of df (2,3 or 4) to those variables that are modeled with smoothing splines. g3 is the best model found. Close to the variable we can see the total number of df, for the var. with smoothing splines we have the par. and non-par.
+
+```{r}
+sc <- gam.scope(dati.train[,-8], response=8, arg=c("df=2","df=3","df=4"))
+#This function doesn't return always the same model
+g3<- step.Gam(g2, scope=sc, trace=T)
+summary(g3)
+AIC(g3)
+par(mfrow=c(3,5))
+plot(g3, se=T)
+par(mfrow=c(1,1))
+```
+
+The GAM model is better than the linear model in terms of predictions?
+
+```{r}
+#Prediction
+dati.test[,c(3,7, 10:24)]= lapply(dati.test[,c(3,7, 10:24)],factor)
+p.gam <- predict(g3, newdata=dati.test)     
+#The deviance is lower than linear model. The GAM predict in a better way and is also more 
+#interpretable
+dev.gam <- sum((p.gam-dati.test$vote_average)^2)
+dev.gam
+```
+
+## Gradient Boosting
+
+```{r}
+library (gbm)
+
+#Divide the training set into 2 parts (70 and 30) to select the best number of trees
+set.seed(999)
+tt = sample (1:nrow(dati.train), 0.7*nrow(dati.train))
+train.1=dati.train[tt ,]
+train.2=dati.train[-tt ,]
+```
+
+First boosting for regression (stump: we do not allow for interactions between variables, depth=1)
+
+```{r}
+boost.movies=gbm(vote_average ~ .-vote_classes, data=train.1, 
+                 distribution="gaussian", n.trees=5000, interaction.depth=1)
+summary(boost.movies)
+```
+
+Second boosting: increase the depth of trees (4)
+
+```{r}
+boost.movies.1=gbm(vote_average ~ .-vote_classes, data=train.1, 
+                 distribution="gaussian", n.trees=5000, interaction.depth=4)
+summary(boost.movies)
+```
+
+```{r}
+#Predictions for our two model
+yhat.boost=predict(boost.movies, newdata=train.2, n.trees=1:5000)
+yhat.boost.1=predict(boost.movies.1, newdata=train.2, n.trees=1:5000)
+```
+
+Calculate the error for each iteration (5000). Use 'apply' to perform a 'cycle for', then the first element is the matrix we want to use, the "2" means 'by column' and the third element indicates 
+
+```{r}
+#the function we want to calculate
+err = apply(yhat.boost, 2, function(pred) mean((train.2$vote_average - pred)^2))
+err.1 = apply(yhat.boost.1, 2, function(pred) mean((train.2$vote_average - pred)^2))
+```
+
+```{r}
+#Best error for each model
+best0=which.min(err)
+min(err)
+#The second model has a minor prediction error
+best1=which.min(err.1)
+min(err.1) 
+```
+
+```{r}
+#Since min(err.1) is smaller than min(err), depth=4 is better than depth=1, we select best1
+best1 
+best<- best1
+```
+
+Final model with best number of trees on entire training set (dati.train)
+
+```{r}
+boost.movies.1=gbm(vote_average ~ .-vote_classes, data=dati.train, 
+                 distribution="gaussian", n.trees=best, interaction.depth=4)
+summary(boost.movies.1)
+# AIC(boost.movies.1)
+```
+
+```{r}
+#Prediction on test set
+p.boost=predict(boost.movies.1, newdata=dati.test, n.trees=best)
+dev.boost <- sum((p.boost-dati.test$vote_average)^2)
+#To compare with linear model and GAM. GBM is the best model considering deviance.
+dev.boost
+```
+
+Change the plot to improve readability. Increase space on the left to fit the name of variables.
+
+```{r}
+#Default parameters
+mai.old<-par()$mai
+mai.old
+#New parameters equal to old parameters
+mai.new<-mai.old
+#Substitute parameter relative to left space
+mai.new[2] <- 2.1 
+mai.new
+#Modify graphical parameters
+par(mai=mai.new)
+#las=1 horizontal names on y 
+summary(boost.movies.1, las=1) 
+#cBar sets how many variables to draw
+summary(boost.movies.1, las=1, cBar=10)
+#Back to old parameters
+par(mai=mai.old)
+```
+
+```{r}
+#Partial dependence plots
+#Univariate
+plot(boost.movies.1, i.var=1, n.trees = best)
+plot(boost.movies.1, i.var=2, n.trees = best)
+plot(boost.movies.1, i.var=5, n.trees = best)
+plot(boost.movies.1, i.var=3, n.trees = best) 
+plot(boost.movies.1, i.var=6, n.trees = best)
+#Qualitative variable
+plot(boost.movies.1, i=23, n.trees = best)
+#No effect
+plot(boost.movies.1, i=17, n.trees = best) 
+#Bivariate
+plot(boost.movies.1, i.var=c(1,5), n.trees = best) 
+```
+
+### Exercise: try to fit another GB with shrinkage=0.1
+
+```{r}
+#Model
+boost.movies.2=gbm(vote_average ~ .-vote_classes ,data=train.1, 
+                 distribution="gaussian",n.trees=5000, interaction.depth=4, shrinkage=0.1)
+summary(boost.movies.2)
+```
+
+```{r}
+#Predictions
+yhat.boost.2=predict(boost.movies, newdata=train.2, n.trees=1:5000)
+```
+
+```{r}
+#Errors and best numer of trees
+err.2 = apply(yhat.boost.2, 2, function(pred) mean((train.2$vote_average - pred)^2))
+best2=which.min(err.2)
+min(err.2)
+best<- best2
+```
+
+```{r}
+#Final model with best number of trees on entire training set (dati.train)
+boost.movies.2=gbm(vote_average ~ .-vote_classes, data=dati.train, 
+                   distribution="gaussian", n.trees=best2, interaction.depth=4)
+summary(boost.movies.2)
+```
+
+```{r}
+#Prediction on test set
+p.boost=predict(boost.movies.2, newdata=dati.test, n.trees=best)
+dev.boost.2 <- sum((p.boost-dati.test$vote_average)^2)
+#The previous model is better
+dev.boost.2
+```
+
+
+# LAB 1
+
+```{r}
+library("readxl")
+apple<- read_excel("DatiAPPLE.xlsx")
+str(apple)
+apple$iPhone
+```
+
+```{r}
+#Data cleaning (without Nan values) and cumulative data
+iphone<- apple$iPhone[1:46]
+iphone
+iphonec<- cumsum(iphone)
+iphonec
+```
+
+```{r}
+#Plots
+par(mfcol=c(2,1))
+plot(iphone, type="l")
+plot(iphonec, type="l")
+par(mfrow=c(1,1))
+```
+
+```{r}
+#Autocorrelation function
+acf(iphone)
+summary(iphone)
+```
+
+## BASS model
+
+```{r}
+library(DIMORA)
+source("DIMORA1.0.0.R")
+```
+
+```{r}
+#Bass standard (forecasting)
+BMs<-BASS.standard(iphone,display = T)
+BMs
+#The function "fitted()" gives us a cumulative output by default, to use the "normal" fit we should use
+#"make.instantaneous()" function
+pred_BM<- fitted(BMs)
+#Cumulative forecasting
+plot(pred_BM, type="l",ylab="z(t)",xlab="t")
+#Instantaneous forecasting
+pred_BMinst<- make.instantaneous(pred_BM)
+plot(pred_BMinst, type="l",ylab="z'(t)",xlab="t")
+#Change the chacarter of labels
+#plot(pred_BMinst, type="l",ylab=expression(italic("z'(t)")),xlab=expression(italic(t)))
+```
+
+```{r}
+#Cumulative data plot
+plot(iphonec, xlab="Quarters", ylab="Sales", main="iPhone")
+lines(pred_BM,col=2)
+```
+
+```{r}
+#Instantaneous data plot
+plot(iphone, type= "l",xlab="Quarters", ylab="Sales", main="iPhone")
+lines(pred_BMinst,col=2)
+legend(35,20,legend= c("observed","BM"), col=c(1,2), lty=1)
+```
+
+```{r}
+#Bass Model estimates
+BMs$Estimate
+m<-BMs$Estimate[1,1]
+m
+p<-BMs$Estimate[2,1]
+p
+q<-BMs$Estimate[3,1]
+q
+```
+
+```{r}
+#Residuals 
+par(mfrow=c(2,1))
+#Cumulative (the residuals are not random, there is an oscillatory pattern)
+plot(residuals(BMs)) 
+#Instantaneous
+plot(pred_BMinst-iphone) 
+```
+
+Autocorrelation function (this function confirms the correlation between residuals) first five residuals are significant correlated (also the 14th and 15th)
+
+```{r}
+#Cumulative data
+acf(residuals(BMs)) 
+#Instantaneous data (another confirmation of relationship)
+acf(pred_BMinst-iphone) 
+par(mfrow=c(1,1))
+```
+
+## GENERALIZED BASS MODEL
+
+Generalized Bass Model (with only one exponential shock) m, p and q derive form the previus Bass Model, we use them like a starting point; 17 (a1): 17th observation, starting point (moment) of the shock (in the slides the start. point is different -> so the estimation is different, a good choice of a1 depends from our observation of sales distribution, we hypotize a shock in a particular moment seeing the plot) -0.1 (b1): memory of the shock, in this case it is a negative memory (it is a careful starting point) 0.1 (c1): intensity of the shock (it is a careful starting point)
+
+```{r}
+GBMe1<-BASS.generalized(iphone, shock = "exp", nshock = 1, prelimestimates = c(m, p , q, 17, -0.1, 0.1), display=F)
+GBMe1
+pred_GBMe1<- fitted(GBMe1)
+pred_GBMinst<-make.instantaneous(pred_GBMe1)
+```
+
+```{r}
+#Plot
+plot(iphone, type= "l",xlab="Quarters", ylab="Sales", main="iPhone")
+lines(pred_GBMinst,col=2)
+legend(35,20,legend= c("observed","GBM-e1"), col=c(1,2), lty=1)
+```
+
+if R2_tilde > 0.3, the more complex model is significant (in this case GBM is better than BM) it makes sense to use a more complex model
+
+```{r}
+R2_tilde<-(GBMe1$Rsquared - BMs$Rsquared)/(1 - BMs$Rsquared)
+R2_tilde
+```
+
+## GUISEO-GUIDOLIN MODEL
+
+```{r}
+GGM <- GG.model(iphone, prlimestimates = c(m, 0.01, 0.1, p, q), display = F)
+GGM
+pred_GGM <- fitted(GGM)
+pred_GGMinst <- make.instantaneous(pred_GGM)
+```
+
+
+```{r}
+#Plot comparison between GGM, BM and GBM
+plot(iphone, type= "l",xlab="Quarters", ylab="Sales", main="iPhone")
+lines(pred_GGMinst,col=2)
+lines(pred_BMinst,col=3)
+lines(pred_GBMinst, col=4)
+legend(35,30,legend= c("observed","GGM", "BM", "GBM"), col=c(1,2,3,4), lty=1)
+```
+
+## ARIMA MODEL
+
+Considering the fact that our GGM is good but doesn't captured the high variability (see graph) of the data (the peaks are ignored by our GGM). We will try to model the residuals with the ARIMA model.
+
+```{r}
+library(forecast)
+#We will use the residuals obtained from GGM
+residuals <- residuals(GGM)
+residuals
+```
+
+The residuals don't show any trend. This is due to the fact that the GGM had captured the trend in time series. We have already modeled our trend, so in the residuals there isn't any trend. This is a good result, we expected it using GGM.
+
+A part from few lag residuals, the graph doesn't show any particular trend in autocorr., it is coherent with previous result. But it's important to notice that there are significant autocorrelations that show a behavior that we have to model.
+
+```{r}
+plot(residuals, type= 'l')
+acf(residuals)
+```
+
+ARIMA model on residuals with 'manual' selection 
+We try to model the residuals (our new time series) (instead of the data itself). Arima's arguments: time series, order, seasonal and period. In "order" we consider: the two ones refer to the autoregressive and moving average element, the zero (differencing) means that we deal with a t.s. without any trend, so the diff. isn't useful (remember that the residuals don't show any particular trend). 
+In any case, we cosider the seasonality (?) part because our series is characterize by seasonality in any case. In this case "period" refers to quarterly data (three months).
+
+```{r}
+arimaResiduals <- Arima(residuals, order = c(1,0,1), seasonal = list(order = c(1,0,0), period = 4))
+
+#ARIMA model for residuals with auto.arima
+#autoarima<- auto.arima(residuals)
+#Best model selected with AIC (not always)
+#autoarima
+
+#ar1: coeff. autoregressive non-seasonal part
+#ma1: coeff. moving average non-seasonal part
+#sar1: coeff. aut. seasonal part
+#mean: mean behavior
+#To see the significance of our coefficients, we compute: coeff./s.e.. If the division is 
+#greater than two, it's significant (in this case all, except the mean, are sign.).
+summary(arimaResiduals)
+```
+
+```{r}
+#Forecasting on residuals and plot comparison
+Forecast <- fitted(arimaResiduals)
+Forecast
+plot(Forecast, lty=2)
+lines(residuals, lty=2,col=2)
+legend(0,20,legend= c("arima forecast", "observed t.s."), col=c(1,2), lty=2)
+```
+
+We use GGM and ARIMA to obtain a forecasting that exploits GGM forecasting on data and ARIMA forecasting on residuals 
+
+```{r}
+forecast.inst <- make.instantaneous(Forecast)
+#Here we sum the predicted values using GGM and the forecasting on residuals obtained with ARIMA
+forecastiPhone <- pred_GGMinst + forecast.inst
+plot(forecastiPhone)
+plot(iphone, type='l', xlab = "Quarters", ylab = "Sales", main = "iPhone")
+lines(forecastiPhone, col=2)
+lines(pred_GGMinst,col=3)
+legend(35,30,legend= c("observed","Forecasting","GGM"), col=c(1,2,3), lty=1)
+```
+
+## EXPLORATIVE PART (To see in practice other models, not necessary)
+
+```{r}
+#Now we calculate a manual direct ARIMA and an auto direct ARIMA:
+#Manual direct ARIMA (2 versions)
+#Without differencing
+directarima<- Arima(iphone, order = c(1,0,1), seasonal = list(order = c(1,0,0), period = 4))
+summary(directarima)
+NewForecast <- fitted(directarima)
+NewForecast
+```
+
+```{r}
+#With differencing (d=1)
+directarima_diff<- Arima(iphone, order = c(1,1,1), seasonal = list(order = c(1,0,0), period = 4))
+summary(directarima_diff)
+NewForecast_diff <- fitted(directarima_diff)
+NewForecast_diff
+```
+
+```{r}
+#Auto direct ARIMA
+autodirectarima<-  auto.arima(iphone)
+summary(autodirectarima)
+NewForecast2 <- fitted(autodirectarima)
+NewForecast2
+```
+
+```{r}
+#Plot comparison
+plot(iphone, type='l', lty=1, col=1)
+lines(NewForecast, lty=1, col=2)
+lines(NewForecast_diff, lty=1, col=3)
+lines(NewForecast2, lty=1, col=4)
+lines(forecastiPhone, col=5)
+lines(pred_GGMinst,col=6)
+legend(0,81,legend= c("observed t.s.", "direct manual ARIMA", "direct manual ARIMA_diff", "direct auto ARIMA", "GGM+ARIMAres" ,"GGM"), col=c(1,2,3,4,5,6), lty=1)
+```
+
+```{r}
+#Another view of results
+par(mfrow=c(3,2))
+plot(iphone, type='l', lty=1, col=1)
+plot(NewForecast, type='l', lty=1, col=2)
+plot(NewForecast_diff, type='l', lty=1, col=3)
+plot(NewForecast2, type='l', lty=1, col=4)
+plot(forecastiPhone, type='l', lty=1, col=5)
+plot(pred_GGMinst,type='l', lty=1, col=6)
+par(mfrow=c(1,1))
+```
+
+```{r}
+#Comparison between the best models: direct ARIMA with d=1 and GGM+ARIMA on resisuals
+plot(iphone, type='l', lty=1, col=1)
+lines(NewForecast_diff, lty=1, col=2)
+lines(forecastiPhone, col=3)
+legend(0,81,legend= c("observed t.s.", "direct manual ARIMA_diff", "GGM+ARIMAres"), col=c(1,2,3), lty=1)
+```
+
+```{r}
+#To compare not only with plots, we can plot the beahvior of resisuals of our two best model
+#Residual of direct manual ARIMA_diff
+residuals_arima_diff <- residuals(directarima_diff)
+residuals_arima_diff
+plot(residuals_arima_diff, type= 'l')
+acf(residuals_arima_diff)
+```
+
+```{r}
+#Residual of GGM+ARIMAres
+residuals_GGM_ARIMAres <- iphone - forecastiPhone
+residuals_GGM_ARIMAres
+plot(residuals_GGM_ARIMAres, type= 'l')
+acf(residuals_GGM_ARIMAres)
+```
+
+```{r}
+#ARMAX refinement (ARIMA model with x regressor - predicted values with GGM)
+arimaGGM<-Arima(iphonec, order = c(2,0,1),seasonal = list(order=c(1,0,0), period=4), xreg = pred_GGM)
+arimaGGM
+```
+
+```{r}
+#Predictions
+pred_sarmax<- fitted(arimaGGM)
+pred_sarmaxinst<- make.instantaneous(fitted(arimaGGM))
+```
+
+```{r}
+#Plot
+plot(iphone, type= "l",xlab="Quarters", ylab="Sales", main="iPhone")
+lines(pred_sarmaxinst,col=2)
+```
+
+
+# LAB 2
+
+```{r}
+library("readxl")
+#data from Athanaspoulos and Hyndman
+library(fpp2) 
+#DW test
+library(lmtest) 
+library(forecast)
+```
+
+## LINEAR REGRESSION
+
+```{r}
+#iMac example
+apple<- read_excel("DatiAPPLE.xlsx")
+str(apple)
+imac <- apple$iMac
+```
+
+```{r}
+#Data visualization
+plot(imac,type="l", xlab="quarter", ylab="iMac sales")
+
+#Time variable "tt" for a linear model 
+tt<- 1:NROW(apple)
+
+#Linear model
+fitlm <- lm(imac~tt)
+summary(fitlm)
+
+#Residuals
+res<- residuals(fitlm)
+
+#Plot od residuals
+#Parabolic behavior, they aren't randomly distributed
+plot(res, xlab="quarter", ylab="residuals")
+
+#Plot of the model
+plot(imac,type="l", xlab="quarter", ylab="iMac sales")
+abline(fitlm, col=3)
+```
+
+```{r}
+#Data transformed as time series
+mac.ts<-ts(imac, frequency=4)
+mac.ts
+
+#Model with trend and seasonality
+#"trend" and "seasonality" are two variables inside the tslm function
+fitts <- tslm(mac.ts~ trend+season)
+#Season1 is omitted because the three season (2,3,4) are calculated as the difference from
+#a "base state", in this case season1. So we avoid "perfect-correlation"
+summary(fitts)
+rests <- residuals(fitts)
+
+#Plot
+plot(fitted(fitts))
+```
+
+```{r}
+#Durbin-Watson test
+#DW value is between 0 and 4 (2 the middle value). If it is near zero it means that the residuals
+#are autocorrelated (see also p-value).
+dwtest(fitts)
+
+#Plt of residuals
+plot(rests, ylab="residuals")
+
+#Plot of model
+plot(mac.ts, ylab="iMac sales", xlab="Time")
+lines(fitted(fitts), col=2)
+```
+
+## ARIMA MODEL
+
+The graph of autocorrelations shows an increasing trend: decreasing behavior of autocorrelations but significant for many lags, so this indicates a trend effect of seasonality demonstrated by the fact that we have peaks every 4 lag. 
+It is possible to use an ARIMA model with trend and seasonality
+
+```{r}
+acf(mac.ts)
+
+#The two vector are obtained by trials and errors
+arima<- Arima(mac.ts, order = c(0,1,1), seasonal = list(order=c(0,1,1), period=4))
+arima
+fitted(arima)
+plot(fitted(arima))
+lines(mac.ts, col=2)
+legend(9,2.5,legend= c("observed","ARIMASeasonality"), col=c(2,1), lty=1)
+```
+
+Pro: we have a very good fit (good forecasting)
+Cons: we can't interpret in a good way the meaning of our parameters (the two vectors of ARIMA) (bad interpretability)
+
+```{r}
+#Forecasting (with confidence intervals)
+forecast(arima)
+plot(forecast(arima))
+```
+
+The acf of residuals is very satisfactory (a part the first autocorrelation) we will deal with a residual situation with constant mean(=0) and constatn variance.
+
+```{r}
+#We have white noise in residuals
+residuals(arima)
+acf(residuals(arima))
+```
+
+```{r}
+#auto ARIMA
+#The auto.arima shows the same results
+auto.arima(mac.ts)
+fitted(auto.arima(mac.ts))
+```
+
+```{r}
+#Plot
+#plot(auto.arima(mac.ts))
+plot(fitted(auto.arima(mac.ts)))
+forecast(auto.arima(mac.ts))
+plot(forecast(auto.arima(mac.ts)))
+```
+
+## Antidiabetic drugs example
+
+```{r}
+a10
+str(a10)
+
+#Plot
+plot(a10)
+#Logaritmic transformation
+plot(log(a10))
+```
+
+```{r}
+###BEST ARIMA MODEL FOR ANTIDIABETIC DRUGS EXAMPLE
+
+#EXERCISE (FIRST TRY)
+par(mfrow=c(2,1))
+arima_diff_1<- Arima(a10, order=c(0,1,1))
+arima_diff_2<- Arima(a10, order=c(0,2,1))
+plot(fitted(arima_diff_1))
+lines(a10, col=2)
+plot(fitted(arima_diff_2))
+lines(a10, col=2)
+par(mfrow=c(1,1))
+
+summary(arima_diff_1)
+acf(residuals(arima_diff_1))
+summary(arima_diff_2)
+acf(residuals(arima_diff_2))
+```
+
+```{r}
+#EXERCISE (SECOND TRY)
+arima_with_seas<- Arima(a10, order=c(0,1,1), seasonal=list(order=c(0,2,1), period=12))
+plot(fitted(arima_with_seas))
+lines(a10, col=2)
+
+summary(arima_with_seas)
+acf(residuals(arima_with_seas))
+```
+
+## LINEAR MODEL
+
+```{r}
+#Linear model with initial data
+a0 <- 1:204
+m1 <- lm(a10~a0)
+summary(m1)
+```
+
+```{r}
+#Plot
+par(mfrow=c(2,2))
+plot(m1)
+par(mfrow=c(1,1))
+plot(a10)
+plot(as.numeric(a10), type="l", xlab="Time", ylab="Antidiabetic drug sales")
+abline(m1, col=2)
+```
+
+```{r}
+#Plot to see the projection
+plot(as.numeric(a10), type="l", xlim=c(0,500), ylim=c(3,100), xlab="Time", ylab="Antidiabetic drug sales")
+abline(m1, col=3)
+```
+
+```{r}
+#Log transformation
+la10 <- log(a10)
+plot(la10, xlab="Time", ylab="log Antidiabetic drug sales")
+
+#Linear model with log data
+m2 <- lm(la10~a0)
+summary(m2)
+
+#Plot
+par(mfrow=c(2,2))
+plot(m2)
+par(mfrow=c(1,1))
+plot(as.numeric(la10), type="l", xlab="Time", ylab="log Antidiabetic drug sales")
+abline(m2, col=2)
+```
+
+```{r}
+#Plot to see the projection
+plot(as.numeric(la10), type="l", xlim=c(0,500), ylim=c(1,7), xlab="Time", ylab="log Antidiabetic drug sales")
+abline(m2, col=2)
+```
+
+```{r}
+#Projections of Linear model and Log Linear model comparison
+plot(a10)
+plot(as.numeric(a10), type="l", xlim=c(0,500), ylim=c(3,100), xlab="Time", ylab="Antidiabetic drug sales")
+abline(m1, col=2)
+summary(m2)
+lines(1:500, exp(predict(m2, newdata=data.frame(a0=c(1:500)))), col=3)
+```
+
+```{r}
+#Exploration of m2 residuals and autocorrelation function
+par(mfrow=c(3,1))
+plot(residuals(m2))
+plot(residuals(m2), type="l", ylab="residuals")
+Acf(residuals(m2), main="ACF")
+```
+
+
+# LAB 3
+
+```{r}
+auto <- read.csv("auto-us.csv")
+str(auto)
+
+#Analysis of variable engine.size
+y <- auto$city.mpg
+x <- auto$engine.size
+
+#Preliminary plot
+plot(x,y,xlab="engine size", ylab="distance")
+```
+
+## LOCAL REGRESSION
+
+```{r}
+#install.packages("sm")
+library(sm)
+plot(x,y)
+
+#sm.regression: nonparametric regression estimate function (performs local regression)
+#h: smoothing parameter
+#add=T: I can add other lines after the creation of the plot 
+#We can see at the beginning of our local regr. line a structure made by straight lines (we have local
+#straight lines), if we want a smoother function we should add the number of points
+sm.regression(x, y, h = 10, add = T)
+
+#Increase the number of points where the function is estimated
+sm.regression(x, y, h = 10, add = T, ngrid=200, col=2)
+
+#We try with different values for h
+#Increasing the value of h we have a smoother function, a lower value of h implies a jumpy function
+sm.regression(x, y, h = 30, ngrid=200, col=1)
+sm.regression(x, y, h = 50, add = T, ngrid=200, col=2)
+sm.regression(x, y, h = 5,  add = T, ngrid=200, col=3)
+sm.regression(x, y, h = 1,  add = T, col=4, ngrid=200)
+
+#We add variability bands ('se': standar deviation)
+sm.regression(x, y,   h = 30, ngrid=200, display="se")
+#The bands are larger when I have few points
+```
+
+## LOCAL POLYNOMIAL (Another way to implement local regression)
+
+We will obtain the same results of local regression but it will be performed in a diffrent way in terms of specification that I provide.
+
+```{r}
+#Another library
+#install.packages("KernSmooth")
+library(KernSmooth)
+plot(x, y, xlab="engine size", ylab="distance")
+#plots local regression in an equivalent way (but obtain with different specifications)
+a1 <- locpoly(x, y, degree=1, bandwidth=30)
+lines(a1)
+#We obtain the same result of: "sm.regression(x, y, h = 30, ngrid=200, col=1)"
+
+
+#We may plot different polinomials: d=2 and d=3
+a2 <- locpoly(x,y,degree=2,bandwidth=30)
+lines(a2,col=2)
+a3 <- locpoly(x,y,degree=3,bandwidth=30)
+lines(a3,col=3)
+
+# LOESS (no library required, default tool of R)
+
+plot(x, y, xlab="engine size", ylab="distance")
+#Default span= 2/3
+lo1 <- loess.smooth(x,y) 
+lines(lo1)
+#We try with other smoothing parameters 'span' 
+lo2 <- loess.smooth(x,y,span=0.9)
+lines(lo2,col=2)
+lo3 <- loess.smooth(x,y,span=0.4)
+lines(lo3,col=3)
+
+#Another way to perform loess; it performs directly the plot
+#default span= 2/3, same results of "lo1 <- loess.smooth(x,y)"
+scatter.smooth(x,y)
+# same results of "loess.smooth(x,y,span=0.3)"
+scatter.smooth(x,y, span=0.3)
+#adding the 'evaluation' parameter we obtain a smoother line
+scatter.smooth(x,y, span=0.3, evaluation=200)
+```
+
+## REGRESSION SPLINES (cubic splines)
+
+```{r}
+#install.packages("splines")
+library(splines)
+
+#We select and identify the knots 'equispaced' (we will consider like "true knots" the internal ones,
+#the others are "boundary knots")
+xi<-seq(min(x), max(x), length=4)
+xi
+
+#Model (2 internal knots, from 2 to 3. Note: "knots=" define the positions of knots, not the number)
+m1<-lm(y ~ bs(x, knots=xi[2:(length(xi)-1)], degree=3))
+#For graphical reasons select 200 points where to evaluate the model
+xxx<-seq(min(x),max(x),length=200)
+#Make predictions by using the 'xxx' points
+fit1<-predict(m1, data.frame(x=xxx))
+
+#Plot
+plot(x,y,xlab="engine size", ylab="distance")
+lines(xxx,fit1,col=2)
+#Vertical plots to indicate the knots
+abline(v=xi[2], lty=3)
+abline(v=xi[3], lty=3)
+
+#In the same function "bs()", I may select the knots by using the degrees of freedom and the degree
+#Basic functions b-spline for a cubic spline (degree=3)
+#df directly related to the number of knots
+#df=length(knots) + degree, so to select 2 knots we need df=5 and degrees=3;
+#The knots are selected by using the quantiles of 'x' distribution 
+
+#First model with 2 internal knots (5 (degrees of freedom) - 3 (degrees) = 2 knots)
+m1bis<-lm(y~bs(x, df=5, degree=3))
+fit1<-predict(m1bis, data.frame(x=xxx))
+lines(xxx,fit1,col=3)
+
+#OBSERVATION
+#Why do not we have the same results for m1 and m1bis? This is due to the choice of knot positions.
+#m1bis considers always 2 knots
+#mx: m1 model with df, knots and degree specification (mx overlaps m1)
+mx<-lm(y ~ bs(x, df=5, knots=xi[2:(length(xi)-1)], degree=3))
+fitx<-predict(mx, data.frame(x=xxx))
+#Plot
+lines(xxx,fitx,col=4)
+#mx2:m1 model with df and degree specification but with 2 other internal knots (mx2 doesn't overlap m1)
+mx2<-lm(y ~ bs(x, df=5, knots=c(130,260), degree=3))
+fitx2<-predict(mx2, data.frame(x=xxx))
+#Plot
+lines(xxx,fitx2,col=5)
+
+#Second model with no internal knots (3(df) - 3(degrees) = 0 knots) 
+m2 <- lm(y ~ bs(x, df=3, degree=3)) 
+fit2<-predict(m2,data.frame(x=xxx))
+lines(xxx,fit2,col=6)
+
+#Third model with 17 knots (without specification of the knot positions)
+m3<-lm(y~bs(x,df=20,degree=3))
+fit3<-predict(m3,data.frame(x=xxx))
+lines(xxx,fit3,col=2)
+
+
+
+### SMOOTHING SPLINES (no library required, default tool)
+
+plot(x,y,xlab="engine size", ylab="distance")
+#Default lambda = NULL 
+s <- smooth.spline(x,y)
+#We can plot the model to see how it describes the data: lines(s)
+#Forecasting
+p<- predict(s, x=xxx)
+lines(p, col=1)
+
+#We will consider different models with different values for lambda
+#Model 1 (overlaps the previous model)
+s1 <- smooth.spline(x,y, lambda=0.0001)
+#We can plot the model to see how it describes the data: lines(s1, col=2)
+#Forecasting of Model 1
+p1<- predict(s1, x=xxx)
+lines(p1, col=2)
+
+#Model 2
+s2 <- smooth.spline(x,y, lambda=0.00001)
+#Forecasting
+p2<- predict(s2, x=xxx)
+lines(p2, col=3)
+
+#Model 3
+s3 <- smooth.spline(x,y, lambda=0.01)
+#Forecasting
+p3<- predict(s3, x=xxx)
+lines(p3, col=4)
+
+#Model 4 (lambda=1 means straight line)
+s4 <- smooth.spline(x,y, lambda=1)
+#Forecasting
+p4<- predict(s4, x=xxx)
+lines(p4, col=5)
+
+# Model 5 (the model doesn't allow a lambda value equals to 0)
+s5 <- smooth.spline(x,y, lambda=0.00000001)
+#Forecasting
+p5<- predict(s5, x=xxx)
+lines(p5, col=6)
+
+legend(200,50,legend= c("lambda=NULL","lambda=0.0001","lambda=0.00001","lambda=0.01","lambda=1","lambda=0.00000001"), col=c(1,2,3,4,5,6), lty=1)
+
+#We try with other smoothing parameters like "spar" (alternative to lambda)
+plot(x,y,xlab="engine size", ylab="distance")
+ss1 <- smooth.spline(x,y,spar=0.8)
+pp1<- predict(ss1, x=xxx)
+lines(pp1, col=2)
+```
