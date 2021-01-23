@@ -170,7 +170,7 @@ Acf(cons)
 Pacf(cons)
 ```
 
-We apparently not dealing with a strong trend, this is due to the fact that by constraction this series can't have a strong trend (this dataset is related to the percentage change in these variables). We are not sure of if there is a seasonality pattern. This indicate that there is NOT a seasonal behavior (even if we have quarterly data). Same result of ACF, only the first lags are significant.
+We apparently not dealing with a strong trend, this is due to the fact that by construction this series can't have a strong trend (this dataset is related to the percentage change in these variables). We are not sure of if there is a seasonality pattern. This indicate that there is NOT a seasonal behavior (even if we have quarterly data). Same result of ACF, only the first lags are significant.
 
 General indication: 
 if the ACF is exponentially decaying and there is a significant spike at lag p (LAST lag and nothing else after) in PACF, it may be an ARMA(p,d,0).
@@ -185,7 +185,7 @@ plot(cons)
 lines(fitted(arima1), col=2)
 ```
 
-Residuals (we try in any case to calculate the residuals plots, althoug we have seen that the fitted values of the model are't good). In a common case (see the guide), after the fitting (and the comparison with other model with AIC) we see directly the residual plot to see the presence of white noise. In this case we see the fitted values instead residuals.
+Residuals (we try in any case to calculate the residuals plots, although we have seen that the fitted values of the model aren't good). In a common case (see the guide), after the fitting (and the comparison with other model with AIC) we see directly the residual plot to see the presence of white noise. In this case we see the fitted values instead residuals.
 In ACF and PACF we have a not so easily understandable significant lag in position 22. The rest is globally acceptable
 
 ```{r}
@@ -393,7 +393,7 @@ AIC(arima1)
 AIC(armax2)
 ```
 
-We prefer the second model.
+We prefer the second model. We want lower AIC
 
 Procedure also available with auto.arima
 
@@ -408,8 +408,8 @@ autoplot(arrivals)
 autoplot(arrivals[,c(1,2)])
 ```
 
-All the variables have seasonality and different trends. Japan has a strongly NON-linear behavior, instead for New Zeland is LINEAR. 
-We focus on Japan and New Zeland because they star in the same way but then from 2001 they have opposite trends. We can hypothesize a competetive behavior for the two countries
+All the variables have seasonality and different trends. Japan has a strongly NON-linear behavior, instead for New Zealand is LINEAR. 
+We focus on Japan and New Zealand because they star in the same way but then from 2001 they have opposite trends. We can hypothesize a competitive behavior for the two countries
 
 ```{r}
 #Variables definition
@@ -435,7 +435,7 @@ summary(mod)
 fitted(mod)
 plot(NZ)
 lines(fitted(mod), col=2)
-#With an "armonic" behavior of residuals we can say that we may be in presence of potive 
+#With an "armonic" behavior of residuals we can say that we may be in presence of positive 
 #autocorrelation in residuals
 plot(residuals(mod))
 ```
@@ -489,7 +489,7 @@ g1 <- gam(NZ~s(tt)+seas+s(Japan),arg=c("df=2","df=3","df=4"))
 summary(g1)
 ```
 
-We have two ANOVA: for parametric and NON-paramtric effects. For seas we don't have a non-par. part because we don't model it with splines (it is pointless molling the seasonality with smoothing splines because is a factorial variable).
+We have two ANOVA: for parametric and NON-paramtric effects. For seas we don't have a non-par. part because we don't model it with splines (it is pointless modelling the seasonality with smoothing splines because is a factorial variable).
 
 ```{r}
 #Time and Japan have a nonlinear effect
@@ -669,9 +669,11 @@ AIC(g3)
 par(mfrow=c(3,5))
 plot(g3, se=T)
 par(mfrow=c(1,1))
+#If we want to see better some plot
+#plot(g3, se=T, ask=T)
 ```
 
-The GAM model is better than the linear model in terms of predictions?
+The GAM model is better than the linear model in terms of predictions
 
 ```{r}
 #Prediction
@@ -683,18 +685,24 @@ dev.gam <- sum((p.gam-dati.test$vote_average)^2)
 dev.gam
 ```
 
+We compare the linear model m2 (obtained by stepwise selection) and g3 (considering the AIC).
+We do NOT compare m1 and g3, m1 is the starting point in the selection procedure of g3, so we definitely find a better model.
+
+
 ## Gradient Boosting
 
 ```{r}
 library (gbm)
 
 #Divide the training set into 2 parts (70 and 30) to select the best number of trees
+#depth (with or without interactions) and the best number of trees (out two hyperparameters)
 set.seed(999)
 tt = sample (1:nrow(dati.train), 0.7*nrow(dati.train))
 train.1=dati.train[tt ,]
 train.2=dati.train[-tt ,]
 ```
 
+Model with all the variables except "vote_classes" (highly correlated with our response); now we have a numerical response, with a categorical one we have to change the distribution.
 First boosting for regression (stump: we do not allow for interactions between variables, depth=1)
 
 ```{r}
@@ -712,7 +720,8 @@ summary(boost.movies)
 ```
 
 ```{r}
-#Predictions for our two model
+#Predictions for our two model, to select the best one
+#yhat.boost: matrix with 678 rows (samples) and 5000 columns (trees)
 yhat.boost=predict(boost.movies, newdata=train.2, n.trees=1:5000)
 yhat.boost.1=predict(boost.movies.1, newdata=train.2, n.trees=1:5000)
 ```
@@ -778,9 +787,12 @@ summary(boost.movies.1, las=1, cBar=10)
 par(mai=mai.old)
 ```
 
+This plot doesn't say anything about the nature or intensity of the relationship with the response variable, it is just about the relative importance, in term of reduction of error any time we perform an iteration within our model
+
 ```{r}
 #Partial dependence plots
 #Univariate
+#Budget: we see the same relation also in linear and GAM model, this is a consistent result
 plot(boost.movies.1, i.var=1, n.trees = best)
 plot(boost.movies.1, i.var=2, n.trees = best)
 plot(boost.movies.1, i.var=5, n.trees = best)
@@ -791,7 +803,11 @@ plot(boost.movies.1, i=23, n.trees = best)
 #No effect
 plot(boost.movies.1, i=17, n.trees = best) 
 #Bivariate
-plot(boost.movies.1, i.var=c(1,5), n.trees = best) 
+plot(boost.movies.1, i.var=c(1,5), n.trees = best)
+
+#REMEMBER: a PDP indicates what is the relation but after having accounted for the presence of
+#          all the variables within the model, very different from the GAM models: we have a pure 
+#          relationship (net relationship)
 ```
 
 ### Exercise: try to fit another GB with shrinkage=0.1
@@ -809,7 +825,7 @@ yhat.boost.2=predict(boost.movies, newdata=train.2, n.trees=1:5000)
 ```
 
 ```{r}
-#Errors and best numer of trees
+#Errors and best number of trees
 err.2 = apply(yhat.boost.2, 2, function(pred) mean((train.2$vote_average - pred)^2))
 best2=which.min(err.2)
 min(err.2)
@@ -1231,7 +1247,7 @@ forecast(arima)
 plot(forecast(arima))
 ```
 
-The acf of residuals is very satisfactory (a part the first autocorrelation) we will deal with a residual situation with constant mean(=0) and constatn variance.
+The acf of residuals is very satisfactory (aside from the first autocorrelation) we will deal with a residual situation with constant mean(=0) and constatn variance.
 
 ```{r}
 #We have white noise in residuals
