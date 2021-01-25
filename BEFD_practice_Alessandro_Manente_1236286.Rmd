@@ -1,0 +1,139 @@
+---
+title: "Business, Economical and Financial Data"
+output: pdf_document
+author: "Alessandro Manente, 1236286"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# All the libraries
+library("readxl")
+library(forecast)
+library(splines)
+library(gam)
+```
+
+## Data Exploration
+
+```{r}
+data <- read_excel("OS.xlsx")
+data
+summary(data)
+```
+
+```{r}
+ios = data$iOS
+ts_ios = ts(ios, frequency=4)
+android = data$Android
+ts_android = ts(android, frequency=4)
+```
+
+```{r}
+tsdisplay(ios)
+tsdisplay(android)
+```
+
+We can see that iOS data have a small decreasing trend and seasonality, although not perfect; while Android data shows no seasonality and a general increasing trend.
+
+## Exercise 1 and 2
+
+Provide some modelling options for the series “iOS”, by possibly accounting also for the information regarding “Android”. (8pt)
+For each of the modelling solutions proposed, discuss the results obtained, highlighting merits and limitations of these. (8pt)
+
+### Linear Model
+
+#### Linear model done without taking into account data for Android sales
+
+```{r}
+ios_tslm = tslm(ts_ios~ trend+season)
+summary(ios_tslm)
+fit_ios_tslm<- fitted(ios_tslm)
+plot(ts_ios, col=3)
+lines(fit_ios_tslm, col=2)
+```
+
+```{r}
+res_ios_tslm<- residuals(ios_tslm)
+plot(res_ios_tslm)
+Acf(res_ios_tslm)
+checkresiduals(res_ios_tslm)
+```
+
+The model performs better on the last part of the data and shows no autocorrelation on the residuals, but the time series is clearly non linear, hence the need for more complex models.
+
+#### Linear Model done taking into account data for Android sales.
+
+```{r}
+ios_tslm_a = tslm(ts_ios~ trend+season+ts_android)
+summary(ios_tslm_a)
+fit_ios_tslm_a<- fitted(ios_tslm_a)
+plot(ts_ios, col=3)
+lines(fit_ios_tslm_a, col=2)
+```
+```{r}
+res_ios_tslm_a<- residuals(ios_tslm_a)
+plot(res_ios_tslm_a)
+Acf(res_ios_tslm_a)
+checkresiduals(res_ios_tslm_a)
+```
+
+Taking into account the variable Android sales the model performs slightly better, showing again no autocorrelation on the residuals, but still evidencing the need for a more complex model.
+
+### ARIMA Model
+
+```{r}
+arima_ios<- Arima(ios, order = c(0,1,0), seasonal = list(order=c(1,1,1), period=4))
+arima_ios
+
+plot(fitted(arima_ios), col=2)
+lines(ios, col=3)
+```
+
+```{r}
+res_arima_ios<- residuals(arima_ios)
+tsdisplay(res_arima_ios)
+checkresiduals(res_arima_ios)
+```
+
+The ARIMA model performs fairly well, giving as a result a good approximation of the data and no apparent autocorrelation on the residuals. Still it is to be noted that it has difficulties in modelling the beginning of the time series.
+
+### GAM
+
+```{r}
+gam_ios <- gam(ios~s(android),arg=c("df=2","df=3","df=4"))
+
+plot(ios, col=3, type="l")
+lines(fitted(gam_ios), col=2)
+```
+
+```{r}
+tsdisplay(residuals(gam_ios))
+```
+
+The GAM model captures the general trend fairly well, while not fitting really well the dataset. The residuals shows some seasonality that could be the cause behind the performance of the model.
+
+
+### Conclusion
+
+Given the models tested and the results obtained we have that the best model found is the $ARIMA(0,1,0)(1,1,1)_4$. The others have problems such as not being the right kind of model for the problem (non-linear problem vs linear model) or not being enough close to the dataset itself. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
